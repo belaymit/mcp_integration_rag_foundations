@@ -28,77 +28,42 @@ class MCPHttpWrapper {
     }
 
     setupRoutes() {
-        // Health check endpoint
         this.app.get('/health', (req, res) => {
             res.json({ 
-                status: 'ok', 
-                server: this.serverProcess ? 'running' : 'stopped',
-                port: this.port 
+                status: 'healthy', 
+                server: this.serverCommand,
+                port: this.port,
+                timestamp: new Date().toISOString()
             });
         });
 
-        // MCP endpoint for HTTP transport
-        this.app.post('/mcp', async (req, res) => {
+        this.app.get('/tools', async (req, res) => {
             try {
-                if (!this.serverProcess) {
-                    await this.startServer();
-                }
-
-                const response = await this.sendToServer(req.body);
-                res.json(response);
+                const tools = await this.getTools();
+                res.json({ tools });
             } catch (error) {
-                console.error('Error processing MCP request:', error);
-                res.status(500).json({ 
-                    error: 'Internal server error', 
-                    message: error.message 
-                });
+                console.error('Error getting tools:', error);
+                res.status(500).json({ error: error.message });
             }
         });
 
-        // Convenience endpoints
-        this.app.get('/tools', async (req, res) => {
+        this.app.post('/mcp', async (req, res) => {
             try {
-                if (!this.serverProcess) {
-                    await this.startServer();
-                }
-
-                const response = await this.sendToServer({
-                    jsonrpc: "2.0",
-                    id: this.requestId++,
-                    method: "tools/list"
-                });
+                const response = await this.sendMCPRequest(req.body);
                 res.json(response);
             } catch (error) {
-                console.error('Error getting tools:', error);
-                res.status(500).json({ 
-                    error: 'Internal server error', 
-                    message: error.message 
-                });
+                console.error('Error in MCP request:', error);
+                res.status(500).json({ error: error.message });
             }
         });
 
         this.app.post('/invoke/:toolName', async (req, res) => {
             try {
-                if (!this.serverProcess) {
-                    await this.startServer();
-                }
-
-                const response = await this.sendToServer({
-                    jsonrpc: "2.0",
-                    id: this.requestId++,
-                    method: "tools/call",
-                    params: {
-                        name: req.params.toolName,
-                        arguments: req.body
-                    }
-                });
+                const response = await this.invokeTool(req.params.toolName, req.body);
                 res.json(response);
             } catch (error) {
                 console.error('Error invoking tool:', error);
-                res.status(500).json({ 
-                    error: 'Internal server error', 
-                    message: error.message 
-                });
+                res.status(500).json({ error: error.message });
             }
         });
     }
@@ -113,12 +78,7 @@ class MCPHttpWrapper {
             });
 
             this.serverProcess.stderr.on('data', (data) => {
-                console.log('Server log:', data.toString());
-            });
-
-            this.serverProcess.on('close', (code) => {
-                console.log(`Server process exited with code ${code}`);
-                this.serverProcess = null;
+                console.log('Server log:', data.toString().trim());
             });
 
             this.serverProcess.on('error', (error) => {
@@ -126,88 +86,117 @@ class MCPHttpWrapper {
                 reject(error);
             });
 
-            // Initialize the server
-            this.sendToServer({
-                jsonrpc: "2.0",
-                id: this.requestId++,
-                method: "initialize",
-                params: {
-                    protocolVersion: "2024-11-05",
-                    capabilities: {
-                        roots: { listChanged: true },
-                        sampling: {}
-                    },
-                    clientInfo: {
-                        name: "mcp-http-wrapper",
-                        version: "1.0.0"
-                    }
+            this.serverProcess.on('exit', (code) => {
+                console.log(`Server process exited with code ${code}`);
+            });
+
+            // Wait a moment for server to start
+            setTimeout(async () => {
+                try {
+                    await this.initializeServer();
+                    console.log('Server initialized successfully');
+                    resolve();
+                } catch (error) {
+                    console.error('Failed to initialize server:', error);
+                    reject(error);
                 }
-            }).then(() => {
-                console.log('Server initialized successfully');
-                resolve();
-            }).catch(reject);
+            }, 2000);
         });
     }
 
-    async sendToServer(request) {
+    async initializeServer() {
+        const initRequest = {
+            jsonrpc: "2.0",
+            id: this.requestId++,
+            method: "initialize",
+            params: {
+                protocolVersion: "2024-11-05",
+                capabilities: {
+                    roots: { listChanged: true },
+                    sampling: {}
+                },
+                clientInfo: {
+                    name: "mcp-http-wrapper",
+                    version: "1.0.0"
+                }
+            }
+        };
+
+        return this.sendMCPRequest(initRequest);
+    }
+
+    async sendMCPRequest(request) {
         return new Promise((resolve, reject) => {
             if (!this.serverProcess) {
-                reject(new Error('Server not running'));
+                reject(new Error('Server process not started'));
                 return;
             }
 
-            const requestStr = JSON.stringify(request) + '\n';
-            
-            // Set up response handler
-            const responseHandler = (data) => {
-                const lines = data.toString().split('\n').filter(line => line.trim());
-                
-                for (const line of lines) {
-                    try {
-                        const response = JSON.parse(line);
-                        if (response.id === request.id) {
-                            this.serverProcess.stdout.off('data', responseHandler);
-                            resolve(response);
-                            return;
-                        }
-                    } catch (error) {
-                        // Ignore parsing errors for non-JSON lines
-                    }
+            const timeout = setTimeout(() => {
+                reject(new Error('Request timeout'));
+            }, 30000);
+
+            const handleResponse = (data) => {
+                clearTimeout(timeout);
+                try {
+                    const response = JSON.parse(data.toString());
+                    resolve(response);
+                } catch (error) {
+                    reject(new Error('Invalid JSON response'));
                 }
+                this.serverProcess.stdout.removeListener('data', handleResponse);
             };
 
-            this.serverProcess.stdout.on('data', responseHandler);
-            
-            // Send the request
-            this.serverProcess.stdin.write(requestStr);
-
-            // Set timeout
-            setTimeout(() => {
-                this.serverProcess.stdout.off('data', responseHandler);
-                reject(new Error('Request timeout'));
-            }, 10000);
+            this.serverProcess.stdout.on('data', handleResponse);
+            this.serverProcess.stdin.write(JSON.stringify(request) + '\n');
         });
+    }
+
+    async getTools() {
+        const request = {
+            jsonrpc: "2.0",
+            id: this.requestId++,
+            method: "tools/list"
+        };
+
+        const response = await this.sendMCPRequest(request);
+        return response.result?.tools || [];
+    }
+
+    async invokeTool(toolName, args) {
+        const request = {
+            jsonrpc: "2.0",
+            id: this.requestId++,
+            method: "tools/call",
+            params: {
+                name: toolName,
+                arguments: args
+            }
+        };
+
+        return this.sendMCPRequest(request);
     }
 
     start() {
-        this.app.listen(this.port, () => {
+        this.app.listen(this.port, async () => {
             console.log(`MCP HTTP Wrapper running on http://localhost:${this.port}`);
-            console.log(`Available endpoints:`);
-            console.log(`  GET  /health - Health check`);
-            console.log(`  GET  /tools - List available tools`);
-            console.log(`  POST /mcp - Raw MCP endpoint`);
-            console.log(`  POST /invoke/:toolName - Invoke specific tool`);
+            console.log('Available endpoints:');
+            console.log('  GET  /health - Health check');
+            console.log('  GET  /tools - List available tools');
+            console.log('  POST /mcp - Raw MCP endpoint');
+            console.log('  POST /invoke/:toolName - Invoke specific tool');
+            
+            try {
+                await this.startServer();
+            } catch (error) {
+                console.error('Failed to start MCP server:', error);
+                process.exit(1);
+            }
         });
-    }
-
-    stop() {
-        if (this.serverProcess) {
-            this.serverProcess.kill();
-        }
     }
 }
 
-// Configuration for different server types
+// Server configurations
 const serverConfigs = {
     filesystem: {
         port: 8001,
@@ -215,74 +204,41 @@ const serverConfigs = {
         args: ['-y', '@modelcontextprotocol/server-filesystem', './mock_knowledge_base'],
         env: {}
     },
-    github: {
+    everything: {
         port: 8002,
-        command: 'docker',
-        args: [
-            'run', '-i', '--rm', 
-            '-e', 'GITHUB_PERSONAL_ACCESS_TOKEN',
-            'ghcr.io/github/github-mcp-server'
-        ],
-        env: {
-            GITHUB_PERSONAL_ACCESS_TOKEN: process.env.GITHUB_PERSONAL_ACCESS_TOKEN || 'dummy_token'
-        }
+        command: 'npx',
+        args: ['-y', '@modelcontextprotocol/server-everything'],
+        env: {}
     },
-    atlassian: {
+    memory: {
         port: 8003,
+        command: 'npx',
+        args: ['-y', '@modelcontextprotocol/server-memory'],
+        env: {}
+    },
+    github: {
+        port: 8004,
         command: 'docker',
-        args: [
-            'run', '-i', '--rm',
-            '-e', 'CONFLUENCE_URL',
-            '-e', 'CONFLUENCE_USERNAME', 
-            '-e', 'CONFLUENCE_API_TOKEN',
-            'ghcr.io/sooperset/mcp-atlassian:latest'
-        ],
-        env: {
-            CONFLUENCE_URL: process.env.CONFLUENCE_URL || 'https://example.atlassian.net/wiki',
-            CONFLUENCE_USERNAME: process.env.CONFLUENCE_USERNAME || 'dummy@example.com',
-            CONFLUENCE_API_TOKEN: process.env.CONFLUENCE_API_TOKEN || 'dummy_token'
-        }
+        args: ['run', '-i', '--rm', '-e', 'GITHUB_PERSONAL_ACCESS_TOKEN', 'ghcr.io/github/github-mcp-server'],
+        env: { GITHUB_PERSONAL_ACCESS_TOKEN: process.env.GITHUB_PERSONAL_ACCESS_TOKEN || 'dummy_token' }
+    },
+    gdrive: {
+        port: 8005,
+        command: 'node',
+        args: ['mock_gdrive_server.js'],
+        env: {}
     }
 };
 
-function main() {
-    const args = process.argv.slice(2);
-    
-    if (args.length === 0) {
-        console.log('Usage: node mcp_http_wrapper.js <server-type>');
-        console.log('Available server types:', Object.keys(serverConfigs).join(', '));
-        console.log('\nExample: node mcp_http_wrapper.js filesystem');
-        process.exit(1);
-    }
+// Get server type from command line
+const serverType = process.argv[2] || 'filesystem';
 
-    const serverType = args[0];
-    const config = serverConfigs[serverType];
-    
-    if (!config) {
-        console.error('Unknown server type:', serverType);
-        console.log('Available server types:', Object.keys(serverConfigs).join(', '));
-        process.exit(1);
-    }
-
-    const wrapper = new MCPHttpWrapper(
-        config.port,
-        config.command,
-        config.args,
-        config.env
-    );
-
-    // Handle graceful shutdown
-    process.on('SIGINT', () => {
-        console.log('\nShutting down...');
-        wrapper.stop();
-        process.exit(0);
-    });
-
-    wrapper.start();
+if (!serverConfigs[serverType]) {
+    console.error(`Unknown server type: ${serverType}`);
+    console.error(`Available servers: ${Object.keys(serverConfigs).join(', ')}`);
+    process.exit(1);
 }
 
-if (require.main === module) {
-    main();
-}
-
-module.exports = MCPHttpWrapper; 
+const config = serverConfigs[serverType];
+const wrapper = new MCPHttpWrapper(config.port, config.command, config.args, config.env);
+wrapper.start(); 
