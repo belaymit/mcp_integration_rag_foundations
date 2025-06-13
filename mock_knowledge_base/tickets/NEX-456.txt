@@ -1,0 +1,8 @@
+Ticket: NEX-456
+Summary: Implement MCP server for Task API
+Description: Wrap the internal Task Management API with an MCP server.
+Status: In Progress
+Assignee: protocol_eng_c
+Reporter: lead_eng
+Code References: commit_def456, PR #52
+Document References: mcp_server_design.md, task_api_spec.md
