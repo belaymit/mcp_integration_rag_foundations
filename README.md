@@ -166,7 +166,29 @@ npm install
 
 ### Usage
 
-To run the project, execute:
+#### Quick Start with Docker Compose
+
+The easiest way to run the MCP environment:
+
+```sh
+# Start all MCP servers
+./start-mcp-env.sh
+
+# Or manually:
+docker compose up -d
+```
+
+#### Stop the Environment
+
+When finished for the day:
+
+```sh
+docker compose down
+```
+
+#### Manual Setup
+
+To run individual components:
 
 ```sh
 npm start

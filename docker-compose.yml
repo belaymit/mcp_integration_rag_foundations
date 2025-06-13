@@ -1,0 +1,69 @@
+services:
+  # GitHub MCP Server
+  github-mcp:
+    image: ghcr.io/github/github-mcp-server
+    container_name: github-mcp-server
+    ports:
+      - "8001:8080"
+    environment:
+      - GITHUB_PERSONAL_ACCESS_TOKEN=${GITHUB_PERSONAL_ACCESS_TOKEN}
+    restart: unless-stopped
+    networks:
+      - mcp-network
+
+  # Filesystem MCP Server
+  filesystem-mcp:
+    image: filesystem-mcp
+    container_name: filesystem-mcp-server
+    ports:
+      - "8002:8080"
+    volumes:
+      - ./mock_knowledge_base:/workspace:ro
+    restart: unless-stopped
+    networks:
+      - mcp-network
+
+  # Google Drive MCP Server (HTTP Wrapper)
+  gdrive-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.gdrive
+    container_name: gdrive-mcp-server
+    ports:
+      - "8005:8005"
+    volumes:
+      - ~/.config/mcp-gdrive:/root/.config/mcp-gdrive
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+    networks:
+      - mcp-network
+    depends_on:
+      - github-mcp
+      - filesystem-mcp
+
+  # MCP Client Tester (Optional - for testing)
+  mcp-tester:
+    build:
+      context: .
+      dockerfile: Dockerfile.tester
+    container_name: mcp-client-tester
+    volumes:
+      - .:/app
+    working_dir: /app
+    networks:
+      - mcp-network
+    depends_on:
+      - github-mcp
+      - filesystem-mcp
+      - gdrive-mcp
+    profiles:
+      - testing
+
+networks:
+  mcp-network:
+    driver: bridge
+
+volumes:
+  gdrive-config:
+    driver: local 
