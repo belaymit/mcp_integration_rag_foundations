@@ -42,6 +42,27 @@ services:
       - github-mcp
       - filesystem-mcp
 
+  # MCP Proxy Server
+  mcp-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.proxy
+    container_name: mcp-proxy-server
+    ports:
+      - "8000:8000"
+    environment:
+      - PROXY_PORT=8000
+      - GITHUB_MCP_URL=http://github-mcp:8080
+      - FILESYSTEM_MCP_URL=http://filesystem-mcp:8080
+      - GDRIVE_MCP_URL=http://gdrive-mcp:8005
+    restart: unless-stopped
+    networks:
+      - mcp-network
+    depends_on:
+      - github-mcp
+      - filesystem-mcp
+      - gdrive-mcp
+
   # MCP Client Tester (Optional - for testing)
   mcp-tester:
     build:
@@ -54,9 +75,7 @@ services:
     networks:
       - mcp-network
     depends_on:
-      - github-mcp
-      - filesystem-mcp
-      - gdrive-mcp
+      - mcp-proxy
     profiles:
       - testing
 

@@ -220,9 +220,11 @@ This project is for local development. For deployment, consider Docker container
 
 ## 🔭 Future Features <a name="future-features"></a>
 
-- [ ] **[new_feature_1]**
-- [ ] **[new_feature_2]**
-- [ ] **[new_feature_3]**
+- [ ] **Implement Basic RAG Agent with MCP Integration**
+- [ ] **Research Advanced MCP Concepts**
+- [ ] **Test MCP Proxy with IDE Integration**
+- [ ] **Documentation & Stand-up Preparation**
+
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -232,15 +234,13 @@ This project is for local development. For deployment, consider Docker container
 
 Contributions, issues, and feature requests are welcome!
 
-Feel free to check the [issues page](../../issues/).
+Feel free to check the [issues page](https://github.com/belaymit/mcp_integration_rag_foundations/issues).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 <!-- SUPPORT -->
 
 ## ⭐️ Show your support <a name="support"></a>
-
-> Write a message to encourage readers to support your project
 
 If you like this project...
 
@@ -250,7 +250,6 @@ If you like this project...
 
 ## 🙏 Acknowledgments <a name="acknowledgements"></a>
 
-> Give credit to everyone who inspired your codebase.
 
 I would like to thank...
 
