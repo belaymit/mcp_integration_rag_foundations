@@ -1,0 +1,16 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci --only=production
+
+# Copy tester files
+COPY mcp_client_tester.js ./
+COPY mcp_http_client_tester.js ./
+
+# Default command (can be overridden)
+CMD ["node", "mcp_http_client_tester.js"] 

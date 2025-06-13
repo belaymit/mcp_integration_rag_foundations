@@ -1,0 +1,25 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci --only=production
+
+# Install the Google Drive MCP server globally
+RUN npm install -g @modelcontextprotocol/server-gdrive
+
+# Copy application files
+COPY mcp_http_wrapper.js ./
+COPY mock_gdrive_server.js ./
+
+# Create config directory
+RUN mkdir -p /root/.config/mcp-gdrive
+
+# Expose port
+EXPOSE 8005
+
+# Start the HTTP wrapper for Google Drive
+CMD ["node", "mcp_http_wrapper.js", "gdrive"] 
