@@ -4,7 +4,11 @@
   "description": "<a name=\"readme-top\"></a>",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:proxy": "jest mcp_proxy_server/test_proxy_server.js",
+    "start:proxy": "node mcp_proxy_server/proxy_server.js"
   },
   "keywords": [],
   "author": "",
@@ -12,6 +16,9 @@
   "dependencies": {
     "axios": "^1.9.0",
     "cors": "^2.8.5",
-    "express": "^5.1.0"
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "jest": "^30.0.0"
   }
 }
