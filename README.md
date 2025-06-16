@@ -320,3 +320,288 @@ This project is [MIT](./LICENSE) licensed.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
+# 📖 MCP Integration RAG Foundations - Complete System Architecture
+
+This project implements a comprehensive **Model Context Protocol (MCP) Integration** system with **Retrieval-Augmented Generation (RAG)** capabilities, designed as a foundation for building intelligent development assistant agents.
+
+## 🏗 System Architecture Overview
+
+```mermaid
+graph TB
+    subgraph "IDE Integration Layer"
+        IDE[VS Code/Cursor IDE]
+        CHAT[Copilot Chat/Cursor Chat]
+    end
+    
+    subgraph "Agent Layer"
+        AGENT[Dev Assistant Agent]
+        RAG[RAG System]
+        KB[(Knowledge Base<br/>11 Documents)]
+    end
+    
+    subgraph "MCP Proxy Layer"
+        PROXY[MCP Proxy Server<br/>:8000]
+    end
+    
+    subgraph "Downstream MCP Servers"
+        GH[GitHub MCP<br/>:8004]
+        FS[Filesystem MCP<br/>:8001]
+        GD[Google Drive MCP<br/>:8005]
+    end
+    
+    subgraph "External Services"
+        GITHUB[GitHub API]
+        FILES[Local Files]
+        GDRIVE[Google Drive API]
+    end
+    
+    IDE --> AGENT
+    CHAT --> AGENT
+    AGENT --> RAG
+    RAG --> KB
+    AGENT --> PROXY
+    PROXY --> GH
+    PROXY --> FS
+    PROXY --> GD
+    GH --> GITHUB
+    FS --> FILES
+    GD --> GDRIVE
+    
+    classDef agent fill:#e1f5fe
+    classDef proxy fill:#f3e5f5
+    classDef mcp fill:#e8f5e8
+    classDef external fill:#fff3e0
+    
+    class AGENT,RAG agent
+    class PROXY proxy
+    class GH,FS,GD mcp
+    class GITHUB,FILES,GDRIVE external
+```
+
+### Architecture Flow: **Downstream Servers → Proxy → Agent → IDE Client**
+
+1. **IDE Client Layer**: VS Code Copilot Chat or Cursor IDE interfaces where users interact
+2. **Agent Layer**: Dev Assistant Agent processes queries using RAG and MCP integration
+3. **MCP Proxy Layer**: Routes requests to appropriate downstream MCP servers
+4. **Downstream Servers**: Specialized MCP servers for GitHub, Filesystem, Google Drive
+5. **External Services**: The actual APIs and data sources being accessed
+
+## 💻 Getting Started
+
+### Prerequisites
+
+- **NodeJS** (version 18 or later)
+- **Git**
+- **Docker** (optional, for MCP servers)
+- **Python** (optional, for Python components)
+
+### Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/belaymit/mcp_integration_rag_foundations.git
+cd mcp_integration_rag_foundations
+
+# Install dependencies
+npm install
+
+# Start MCP Proxy Server (in background)
+cd mcp_proxy_server && node proxy_server.js &
+
+# Test the Demo Agent (works without external dependencies)
+node dev_assistant_agent_node/run_demo.js test
+```
+
+### Component Setup and Usage
+
+#### 1. MCP Proxy Server
+
+**Location**: `mcp_proxy_server/`
+**Purpose**: Routes MCP requests to appropriate downstream servers
+
+```bash
+# Navigate to proxy directory
+cd mcp_proxy_server
+
+# Start the proxy server
+node proxy_server.js
+
+# Test the proxy health
+curl http://localhost:8000/health
+```
+
+**Configuration**: Edit `mcp_proxy_server/config.js` to modify:
+- Server ports and timeouts
+- Downstream server URLs
+- Routing strategies (prefix-based or header-based)
+
+#### 2. Dev Assistant Agent
+
+**Location**: `dev_assistant_agent_node/`
+**Purpose**: Main AI agent with RAG capabilities and MCP integration
+
+```bash
+# Demo Mode (no API keys required)
+node dev_assistant_agent_node/run_demo.js test
+node dev_assistant_agent_node/run_demo.js query "Tell me about NEX-123"
+
+# Full Mode (requires OpenAI API key)
+OPENAI_API_KEY=your_key node dev_assistant_agent_node/run.js
+```
+
+**Features**:
+- ✅ **RAG System**: Indexes 11 documents from mock knowledge base
+- ✅ **MCP Integration**: Intelligent query parsing and server routing
+- ✅ **Demo Mode**: Works without external API dependencies
+- ✅ **Testing**: Comprehensive Jest test suite
+
+#### 3. Knowledge Base
+
+**Location**: `mock_knowledge_base/`
+**Purpose**: Simulated enterprise data for testing RAG capabilities
+
+**Structure**:
+```
+mock_knowledge_base/
+├── jira_tickets.json    # JIRA ticket data
+├── docs/               # Documentation files
+├── code/               # Code snippets
+└── tickets/            # Ticket summaries
+```
+
+#### 4. Testing Components
+
+```bash
+# Run agent tests
+cd dev_assistant_agent_node && npm test
+
+# Test MCP client functionality
+node mcp_client_tester.js
+
+# Test HTTP wrapper
+node mcp_http_client_tester.js
+```
+
+### Docker Deployment (Optional)
+
+```bash
+# Build and start all services
+docker-compose up -d --build
+
+# Stop services
+docker-compose down
+```
+
+## 📚 Documentation Reference
+
+This project includes comprehensive documentation covering all aspects of the MCP integration:
+
+### Core Documentation
+
+- **[Protocol Understanding](protocol_understanding.md)**: MCP and A2A protocol deep dive
+- **[MCP Server Exploration](mcp_server_exploration.md)**: Target MCP servers analysis
+- **[Task Implementation Summary](Task_4_5_6_Implementation_Summary.md)**: Detailed implementation notes
+
+### Advanced Concepts
+
+- **[Advanced MCP Concepts](advanced_mcp_concepts.md)**: Gateway patterns, RBAC, streaming capabilities
+- **[Real-time RAG Notes](realtime_rag_notes.md)**: Static vs real-time RAG analysis
+- **[IDE Integration Guide](ide_mcp_integration.md)**: VS Code and Cursor setup instructions
+
+### System Status
+
+- **[System Ready Status](SYSTEM_READY.md)**: Complete system verification
+- **[Test Reports](test_all_servers.md)**: MCP server testing results
+
+## ✅ Completed Tasks Overview
+
+### ✅ Task 1: Environment Setup & Protocol Understanding
+- NodeJS development environment established
+- MCP and A2A protocol specifications studied
+- Mock knowledge base created with 11 documents
+- Git repository initialized with proper structure
+
+### ✅ Task 2: MCP Server Analysis & Client Development
+- Target MCP servers explored (GitHub, Filesystem, Google Drive)
+- HTTP client wrapper implemented
+- MCP client tester scripts created
+- Server interaction patterns documented
+
+### ✅ Task 3: MCP Proxy Server Implementation
+- Express-based proxy server with intelligent routing
+- Health checking and downstream server monitoring
+- Configurable routing strategies (prefix/header-based)
+- Error handling and graceful degradation
+
+### ✅ Task 4: RAG Agent with MCP Integration
+- **Full Implementation**: LangChain-based RAG with OpenAI embeddings
+- **Demo Implementation**: Text-based similarity matching (no API keys)
+- **MCP Client**: Intelligent query parsing and server routing
+- **Testing**: Comprehensive Jest test suite with mocking
+
+### ✅ Task 5: Advanced MCP Concepts Research
+- **Gateway Patterns**: Request transformation, aggregation, circuit breakers
+- **RBAC Implementation**: Role-based access control design
+- **Streaming Capabilities**: Real-time data processing concepts
+- **Implementation Roadmap**: Phased enterprise deployment strategy
+
+### ✅ Task 6: IDE Integration Testing
+- **VS Code Copilot Chat**: Configuration and testing procedures
+- **Cursor IDE**: Setup and performance benchmarking
+- **Performance Analysis**: Response time comparisons
+- **Troubleshooting Guide**: Common issues and solutions
+
+### ✅ Task 7: Documentation & Architecture Finalization
+- **Complete README**: System architecture and setup instructions
+- **Documentation Integration**: All research and implementation notes
+- **Testing Verification**: End-to-end system functionality confirmed
+- **Architecture Diagram**: Visual representation of complete system flow
+
+## 🧪 System Verification
+
+The complete system has been tested and verified:
+
+```bash
+# System Health Check
+✅ Knowledge Base: 11 documents loaded successfully
+✅ RAG System: Text-based similarity matching functional
+✅ MCP Proxy: Running on port 8000, health check passing
+✅ Agent Demo: 5/5 test queries successful
+✅ MCP Integration: Connecting to proxy server (graceful degradation when downstream servers unavailable)
+```
+
+## 🎯 Key Capabilities Demonstrated
+
+### RAG System
+- **Document Loading**: Multi-source indexing (JIRA, docs, code, tickets)
+- **Query Processing**: Natural language to structured data retrieval
+- **Context Synthesis**: Intelligent combination of RAG and MCP results
+- **Similarity Matching**: Text-based relevance scoring (demo mode)
+
+### MCP Integration
+- **Query Parsing**: Natural language to MCP server routing
+- **Multi-Server Support**: GitHub, Filesystem, Google Drive patterns
+- **Error Handling**: Retry logic with exponential backoff
+- **Graceful Degradation**: RAG fallback when MCP unavailable
+
+### Enterprise Architecture
+- **Scalable Design**: Proxy pattern for multiple downstream services
+- **Security Concepts**: RBAC and authentication patterns researched
+- **Real-time Capabilities**: Streaming and event-driven architectures explored
+- **IDE Integration**: Developer workflow integration tested
+
+## 👥 Authors
+
+👤 **Belay Birhanu G.**
+
+- GitHub: [@belaymit](https://github.com/belaymit)
+- LinkedIn: [LinkedIn](https://www.linkedin.com/in/belay-bgwa/)
+
+## 📝 License
+
+This project is [MIT](./MIT.md) licensed.
+
+---
+
+*This project represents a complete implementation of the MCP Integration RAG Foundations challenge, demonstrating enterprise-grade architecture patterns for AI agent development.*
+

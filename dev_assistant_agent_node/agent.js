@@ -1,21 +1,15 @@
-const { RAGSetup } = require('./rag_setup');
 const { MCPClient } = require('./mcp_client');
+const { RAGSetup } = require('./rag_setup');
+const { DemoRAGSetup } = require('./rag_setup_demo');
 const winston = require('winston');
 
 class DevAssistantAgent {
     constructor(options = {}) {
-        this.ragSetup = new RAGSetup({
-            knowledgeBasePath: options.knowledgeBasePath || './mock_knowledge_base',
-            chunkSize: options.chunkSize || 1000,
-            chunkOverlap: options.chunkOverlap || 200
-        });
-        
         this.mcpClient = new MCPClient({
-            proxyUrl: options.proxyUrl || 'http://localhost:3001',
-            timeout: options.timeout || 10000,
-            retries: options.retries || 3
+            proxyUrl: options.proxyUrl || 'http://localhost:8000'
         });
         
+        // Configure logging
         this.logger = winston.createLogger({
             level: 'info',
             format: winston.format.combine(
@@ -23,250 +17,271 @@ class DevAssistantAgent {
                 winston.format.json()
             ),
             transports: [
-                new winston.transports.Console({
-                    format: winston.format.simple()
-                }),
-                new winston.transports.File({ filename: 'agent.log' })
+                new winston.transports.Console()
             ]
         });
         
+        this.ragSetup = null;
         this.isInitialized = false;
+        this.ragMode = 'full'; // 'full' or 'demo'
+        this.knowledgeBasePath = options.knowledgeBasePath || './mock_knowledge_base';
     }
 
     async initialize() {
-        if (this.isInitialized) {
-            return;
-        }
+        this.logger.info('Initializing Dev Assistant Agent...');
         
         try {
-            this.logger.info('Initializing Dev Assistant Agent...');
+            // Try to initialize full RAG first
+            this.logger.info('Attempting to set up full RAG system...');
+            this.ragSetup = new RAGSetup({
+                knowledgeBasePath: this.knowledgeBasePath
+            });
             
-            // Initialize RAG system
-            this.logger.info('Setting up RAG system...');
             await this.ragSetup.createVectorStore();
-            
-            this.logger.info('Agent initialization completed successfully');
-            this.isInitialized = true;
+            this.ragMode = 'full';
+            this.logger.info('Full RAG system initialized successfully');
             
         } catch (error) {
-            this.logger.error('Failed to initialize agent:', error);
-            throw error;
+            // If full RAG fails (likely due to API key), fallback to demo
+            if (error.message.includes('401') || error.message.includes('API key') || error.message.includes('Authentication')) {
+                this.logger.warn('Full RAG initialization failed due to API key issue. Falling back to demo RAG...');
+                
+                try {
+                    this.ragSetup = new DemoRAGSetup({
+                        knowledgeBasePath: this.knowledgeBasePath
+                    });
+                    
+                    await this.ragSetup.createVectorStore();
+                    this.ragMode = 'demo';
+                    this.logger.info('Demo RAG system initialized successfully');
+                } catch (demoError) {
+                    this.logger.error('Both full and demo RAG initialization failed:', demoError.message);
+                    throw demoError;
+                }
+            } else {
+                this.logger.error('RAG initialization failed:', error.message);
+                throw error;
+            }
         }
+        
+        this.isInitialized = true;
+        this.logger.info('Agent initialization completed successfully');
     }
 
-    async processQuery(userQuery) {
+    async processQuery(query) {
         if (!this.isInitialized) {
             await this.initialize();
         }
+
+        this.logger.info('Processing query: ' + query);
         
         try {
-            this.logger.info(`Processing query: "${userQuery}"`);
-            
-            // Step 1: Parse the query to identify MCP operations
-            const mcpAction = this.mcpClient.parseQuery(userQuery);
+            // Parse query to determine MCP action
+            const mcpAction = this.mcpClient.parseQuery(query);
             this.logger.info('Parsed MCP action:', mcpAction);
             
-            // Step 2: Execute MCP call if applicable
+            // Attempt MCP call
             let mcpResult = null;
             try {
-                if (mcpAction.action === 'get_issue' && mcpAction.server === 'atlassian') {
-                    mcpResult = await this.mcpClient.getJiraIssue(mcpAction.params.issue_key, mcpAction.server);
-                } else if (mcpAction.action === 'get_issue' && mcpAction.server === 'github') {
-                    // For GitHub, we need owner and repo - using defaults for demo
-                    mcpResult = await this.mcpClient.getIssue('owner', 'repo', mcpAction.params.issue_number, mcpAction.server);
-                } else if (mcpAction.action === 'get_user_info') {
-                    mcpResult = await this.mcpClient.getUserInfo(mcpAction.params.username, mcpAction.server);
-                } else if (mcpAction.action === 'list_files') {
-                    mcpResult = await this.mcpClient.listFiles(mcpAction.params.path, mcpAction.server);
-                } else if (mcpAction.action === 'read_file') {
-                    mcpResult = await this.mcpClient.readFile(mcpAction.params.path, mcpAction.server);
-                } else {
-                    // Generic method invocation
-                    mcpResult = await this.mcpClient.invokeMethod(mcpAction.action, mcpAction.params, mcpAction.server);
-                }
-                
+                mcpResult = await this.mcpClient.invokeMethod(
+                    mcpAction.action,
+                    mcpAction.params,
+                    mcpAction.server
+                );
                 this.logger.info('MCP call successful');
             } catch (mcpError) {
-                this.logger.warn('MCP call failed:', mcpError.message);
-                mcpResult = { error: mcpError.message };
+                this.logger.warn('MCP call failed: ' + mcpError.message);
             }
             
-            // Step 3: Perform RAG query to find related context
+            // Perform RAG query
             this.logger.info('Performing RAG query...');
-            const ragResults = await this.ragSetup.query(userQuery, 4);
+            let ragContext = [];
             
-            // Step 4: Synthesize response
-            const response = this.synthesizeResponse(userQuery, mcpResult, ragResults);
+            try {
+                if (this.ragMode === 'demo') {
+                    ragContext = await this.ragSetup.query(query);
+                } else {
+                    const retriever = await this.ragSetup.createRetriever();
+                    const docs = await retriever.invoke(query);
+                    ragContext = docs.map(doc => ({
+                        content: doc.pageContent,
+                        metadata: doc.metadata,
+                        score: 1 // Full RAG doesn't provide scores
+                    }));
+                }
+            } catch (ragError) {
+                this.logger.error('RAG query failed:', ragError.message);
+                throw ragError;
+            }
+            
+            // Synthesize response
+            const synthesizedAnswer = this.synthesizeResponse(query, mcpResult, ragContext);
             
             this.logger.info('Query processing completed');
-            return response;
+            
+            return {
+                success: true,
+                query: query,
+                mcpResult: mcpResult,
+                ragContext: ragContext,
+                synthesizedAnswer: synthesizedAnswer,
+                timestamp: new Date().toISOString(),
+                ragMode: this.ragMode
+            };
             
         } catch (error) {
             this.logger.error('Error processing query:', error);
             return {
                 success: false,
                 error: error.message,
-                query: userQuery,
-                timestamp: new Date().toISOString()
+                query: query,
+                timestamp: new Date().toISOString(),
+                ragMode: this.ragMode
             };
         }
     }
 
-    synthesizeResponse(query, mcpResult, ragResults) {
-        const response = {
-            success: true,
-            query: query,
-            timestamp: new Date().toISOString(),
-            mcpResult: mcpResult,
-            ragContext: ragResults,
-            synthesizedAnswer: ''
-        };
+    synthesizeResponse(query, mcpResult, ragContext) {
+        const mode = this.ragMode === 'demo' ? 'Demo' : 'Production';
+        let response = `**${mode} Dev Assistant Response**\n\nQuery: "${query}"\n\n`;
         
-        // Create a synthesized answer combining MCP and RAG results
-        let answer = `Based on your query "${query}", here's what I found:\n\n`;
-        
-        // Add MCP results
-        if (mcpResult && !mcpResult.error) {
-            answer += "**Direct Tool Results:**\n";
-            if (mcpResult.result) {
-                if (typeof mcpResult.result === 'string') {
-                    answer += mcpResult.result + "\n\n";
-                } else {
-                    answer += JSON.stringify(mcpResult.result, null, 2) + "\n\n";
-                }
+        // Add MCP tool results
+        if (mcpResult && mcpResult.result) {
+            response += `**Tool Access Results:**\n`;
+            response += JSON.stringify(mcpResult.result, null, 2) + '\n\n';
+        } else {
+            response += `**Tool Access Status:** No data retrieved from MCP tools\n`;
+            if (this.ragMode === 'demo') {
+                response += `*Note: Demo mode - external tool access simulated*\n\n`;
             } else {
-                answer += JSON.stringify(mcpResult, null, 2) + "\n\n";
+                response += `*Note: MCP proxy server may not be available*\n\n`;
             }
-        } else if (mcpResult && mcpResult.error) {
-            answer += `**Tool Access Issue:** ${mcpResult.error}\n\n`;
         }
         
         // Add RAG context
-        if (ragResults && ragResults.length > 0) {
-            answer += "**Related Context from Knowledge Base:**\n";
-            ragResults.forEach((result, index) => {
-                answer += `${index + 1}. **${result.metadata.type || 'Document'}** (${result.metadata.source}):\n`;
-                answer += `   ${result.content.substring(0, 200)}${result.content.length > 200 ? '...' : ''}\n\n`;
+        if (ragContext && ragContext.length > 0) {
+            response += `**Related Context from Knowledge Base:**\n`;
+            ragContext.forEach((doc, index) => {
+                const source = doc.metadata?.source || 'unknown';
+                const score = doc.score ? ` - Score: ${doc.score}` : '';
+                response += `${index + 1}. **${source}** (${doc.metadata?.type || 'document'})${score}:\n`;
+                response += doc.content.substring(0, 300) + '...\n\n';
             });
+        } else {
+            response += `**Knowledge Base Search:** No relevant documents found.\n\n`;
         }
         
         // Add insights and recommendations
-        answer += this.generateInsights(query, mcpResult, ragResults);
+        response += `**Insights and Recommendations:**\n`;
+        if (ragContext.length > 0) {
+            response += `- Found ${ragContext.length} relevant documents in knowledge base\n`;
+            response += `- Consider reviewing the retrieved context for detailed information\n`;
+        }
         
-        response.synthesizedAnswer = answer;
+        if (query.toLowerCase().includes('nex-') || query.toLowerCase().includes('ticket')) {
+            response += `- For JIRA tickets, consider checking status and related code references\n`;
+        }
+        
+        if (query.toLowerCase().includes('file') || query.toLowerCase().includes('code')) {
+            response += `- For file operations, ensure proper permissions and paths\n`;
+        }
+        
+        response += `\n*Assistant Mode: ${mode} RAG (${this.ragMode === 'demo' ? 'Text similarity' : 'Vector embeddings'})*`;
+        
         return response;
     }
 
-    generateInsights(query, mcpResult, ragResults) {
-        let insights = "**Insights and Recommendations:**\n";
+    async healthCheck() {
+        let ragStatus = 'unknown';
+        let ragError = null;
+        let documentsIndexed = 0;
         
-        // Analyze patterns in the data
-        if (ragResults && ragResults.length > 0) {
-            const sources = ragResults.map(r => r.metadata.source);
-            const uniqueSources = [...new Set(sources)];
-            
-            insights += `- Found relevant information across ${uniqueSources.length} different sources: ${uniqueSources.join(', ')}\n`;
-            
-            // Look for ticket references
-            const ticketRefs = ragResults.filter(r => r.metadata.type === 'ticket' || r.metadata.source === 'jira');
-            if (ticketRefs.length > 0) {
-                insights += `- Identified ${ticketRefs.length} related tickets that might be relevant\n`;
+        try {
+            if (this.ragSetup) {
+                if (this.ragMode === 'demo') {
+                    documentsIndexed = this.ragSetup.documents?.length || 0;
+                } else {
+                    // For full RAG, we'd need to check the vector store
+                    documentsIndexed = 'unknown';
+                }
+                ragStatus = 'healthy';
+            } else {
+                ragStatus = 'not_initialized';
             }
-            
-            // Look for code references
-            const codeRefs = ragResults.filter(r => r.metadata.type === 'code');
-            if (codeRefs.length > 0) {
-                insights += `- Found ${codeRefs.length} code references that might help with implementation\n`;
-            }
-            
-            // Look for documentation
-            const docRefs = ragResults.filter(r => r.metadata.type === 'documentation');
-            if (docRefs.length > 0) {
-                insights += `- Located ${docRefs.length} documentation files for additional context\n`;
-            }
+        } catch (error) {
+            ragStatus = 'error';
+            ragError = error.message;
         }
         
-        // MCP-specific insights
-        if (mcpResult && !mcpResult.error) {
-            insights += "- Successfully retrieved real-time data from external tools\n";
-        } else if (mcpResult && mcpResult.error) {
-            insights += "- Consider checking tool availability and authentication\n";
+        let mcpStatus = 'unknown';
+        let mcpError = null;
+        
+        try {
+            await this.mcpClient.getMethods('filesystem');
+            mcpStatus = 'healthy';
+        } catch (error) {
+            mcpStatus = 'error';
+            mcpError = error.message;
         }
         
-        insights += "\n**Next Steps:**\n";
-        insights += "- Review the related context for additional insights\n";
-        insights += "- Consider cross-referencing with other tools if needed\n";
-        insights += "- Check for any dependencies or related work items\n";
-        
-        return insights;
+        return {
+            timestamp: new Date().toISOString(),
+            initialized: this.isInitialized,
+            ragMode: this.ragMode,
+            rag: {
+                status: ragStatus,
+                documentsIndexed: documentsIndexed,
+                error: ragError
+            },
+            mcp: {
+                status: mcpStatus,
+                error: mcpError
+            }
+        };
     }
 
-    async getAvailableMethods(serverPrefix = 'filesystem') {
+    async getAvailableMethods() {
         try {
-            return await this.mcpClient.getMethods(serverPrefix);
+            const methods = await this.mcpClient.getMethods();
+            return methods;
         } catch (error) {
-            this.logger.error('Error getting available methods:', error);
+            this.logger.error('Failed to get available methods:', error.message);
             return { error: error.message };
         }
     }
 
-    async healthCheck() {
-        const health = {
-            timestamp: new Date().toISOString(),
-            initialized: this.isInitialized,
-            rag: { status: 'unknown' },
-            mcp: { status: 'unknown' }
-        };
-        
-        try {
-            // Check RAG system
-            if (this.ragSetup.vectorStore) {
-                const testQuery = await this.ragSetup.query('test', 1);
-                health.rag.status = 'healthy';
-                health.rag.documentsIndexed = testQuery.length >= 0;
-            } else {
-                health.rag.status = 'not_initialized';
-            }
-        } catch (error) {
-            health.rag.status = 'error';
-            health.rag.error = error.message;
-        }
-        
-        try {
-            // Check MCP client
-            const methods = await this.mcpClient.getMethods('filesystem');
-            health.mcp.status = methods.error ? 'error' : 'healthy';
-            if (methods.error) {
-                health.mcp.error = methods.error;
-            }
-        } catch (error) {
-            health.mcp.status = 'error';
-            health.mcp.error = error.message;
-        }
-        
-        return health;
-    }
-
-    // Utility method for testing different query types
     async testQueries() {
         const testQueries = [
             "Tell me about JIRA ticket NEX-123",
-            "List files in the code directory",
+            "List files in the code directory", 
             "What is the login feature documentation about?",
             "Show me GitHub issue #5",
             "Find information about MCP server design"
         ];
         
         const results = [];
+        
         for (const query of testQueries) {
             console.log(`\n=== Testing Query: "${query}" ===`);
             try {
                 const result = await this.processQuery(query);
-                results.push({ query, result, success: true });
-                console.log('Result:', JSON.stringify(result, null, 2));
+                results.push({
+                    query: query,
+                    success: result.success,
+                    result: result,
+                    error: result.error
+                });
+                console.log(result.success ? ' Success' : ` Failed: ${result.error}`);
+                if (result.success) {
+                    console.log('Answer:', result.synthesizedAnswer.substring(0, 500) + '...');
+                }
             } catch (error) {
-                results.push({ query, error: error.message, success: false });
-                console.error('Error:', error.message);
+                results.push({
+                    query: query,
+                    success: false,
+                    error: error.message
+                });
+                console.log(` Error: ${error.message}`);
             }
         }
         

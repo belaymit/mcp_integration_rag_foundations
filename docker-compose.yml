@@ -19,6 +19,7 @@ services:
       - "8002:8080"
     volumes:
       - ./mock_knowledge_base:/workspace:ro
+    command: ["/workspace"]
     restart: unless-stopped
     networks:
       - mcp-network

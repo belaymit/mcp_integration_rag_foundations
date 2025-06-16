@@ -76,9 +76,9 @@ Created a modular, production-ready RAG agent system using Node.js with both ful
 
 **Demo Agent Test Output:**
 ```
-🔍 Processing query: "Tell me about NEX-123"
+ Processing query: "Tell me about NEX-123"
 
-📚 Related Context from Knowledge Base:
+ Related Context from Knowledge Base:
 1. **ticket** (jira) - Score: 27:
    Ticket ID: NEX-123
    Summary: Fix login button alignment on mobile
@@ -96,7 +96,7 @@ Created a modular, production-ready RAG agent system using Node.js with both ful
    ## Known Issues
    - Alignment...
 
-💡 Insights and Recommendations:
+Insights and Recommendations:
 - Found relevant information across 3 different sources: jira, ticket_summaries, docs
 - Identified 1 related tickets that might be relevant
 - Located 1 documentation files for additional context
@@ -122,7 +122,7 @@ Created comprehensive analysis in `realtime_rag_notes.md` covering:
 - Requires architecture shift from batch to streaming patterns
 - Significant benefits for dynamic development environments
 
-## Task 5: Advanced MCP Concepts Research ✅
+## Task 5: Advanced MCP Concepts Research 
 
 ### Research Outcomes
 
@@ -191,7 +191,7 @@ const ROLES = {
 2. **Phase 2:** Advanced Gateway (Months 3-5) - Critical for production scale  
 3. **Phase 3:** Streaming (Months 6-8) - Where real-time provides clear value
 
-## Task 6: IDE Integration Testing ✅
+## Task 6: IDE Integration Testing 
 
 ### Integration Testing Results
 

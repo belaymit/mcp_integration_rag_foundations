@@ -8,7 +8,7 @@ class DemoDevAssistantAgent {
         });
         
         this.mcpClient = new MCPClient({
-            proxyUrl: options.proxyUrl || 'http://localhost:3001',
+            proxyUrl: options.proxyUrl || 'http://localhost:8000',
             timeout: options.timeout || 10000,
             retries: options.retries || 3
         });

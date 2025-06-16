@@ -2,7 +2,7 @@ const axios = require('axios');
 
 class MCPClient {
     constructor(options = {}) {
-        this.proxyUrl = options.proxyUrl || 'http://localhost:3001';
+        this.proxyUrl = options.proxyUrl || 'http://localhost:8000';
         this.timeout = options.timeout || 10000;
         this.retries = options.retries || 3;
         
@@ -27,7 +27,7 @@ class MCPClient {
             try {
                 console.log(`MCP Request (attempt ${attempt}):`, JSON.stringify(request, null, 2));
                 
-                const response = await this.axiosInstance.post(`/${serverPrefix}/mcp`, request);
+                const response = await this.axiosInstance.post(`/proxy/${serverPrefix}/mcp`, request);
                 
                 if (response.data.error) {
                     throw new Error(`MCP Error: ${response.data.error.message || 'Unknown error'}`);

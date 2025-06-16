@@ -7,7 +7,7 @@ require('dotenv').config();
 class AgentRunner {
     constructor() {
         this.agent = new DevAssistantAgent({
-            proxyUrl: process.env.MCP_PROXY_URL || 'http://localhost:3001',
+            proxyUrl: process.env.MCP_PROXY_URL || 'http://localhost:8000',
             knowledgeBasePath: process.env.KNOWLEDGE_BASE_PATH || './mock_knowledge_base'
         });
         
